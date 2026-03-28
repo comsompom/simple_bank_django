@@ -87,3 +87,4 @@ pre { white-space: pre-wrap; word-break: break-word; background: rgba(255,255,25
     .topbar { flex-direction: column; gap: 12px; padding: 20px; }
     .hero h1, .panel h1 { font-size: 30px; }
 }
+.inline-form { display: inline-block; margin-right: 8px; }

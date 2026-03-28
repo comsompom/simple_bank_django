@@ -14,6 +14,7 @@ class BankAccount(models.Model):
     account_number = models.CharField(max_length=10, unique=True)
     swift_code = models.CharField(max_length=11, blank=True)
     balance = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    reserved_balance = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     currency = models.CharField(max_length=3, default="EUR")
     status = models.CharField(max_length=20, choices=AccountStatus.choices, default=AccountStatus.ACTIVE)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -28,3 +29,7 @@ class BankAccount(models.Model):
     @property
     def is_blocked(self):
         return self.status == AccountStatus.BLOCKED
+
+    @property
+    def available_balance(self):
+        return self.balance - self.reserved_balance

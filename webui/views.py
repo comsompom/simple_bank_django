@@ -8,7 +8,7 @@ from django.utils.dateparse import parse_date
 from accounts.models import AccountStatus, BankAccount
 from qr_payments.api import QRGenerateSerializer
 from transactions.models import Transaction, Transfer, TransferStatus
-from transactions.services import TransferError, perform_transfer
+from transactions.services import TransferError, approve_pending_transfer, block_pending_transfer, create_transfer_request
 from users.models import User, UserRole
 from webui.forms import EmailAuthenticationForm, QRForm, RegisterForm, TransferForm
 
@@ -66,30 +66,33 @@ def dashboard(request):
             {
                 "account": request.user.bank_account,
                 "recent_transactions": request.user.bank_account.transactions.select_related("related_account")[:8],
-                "fee_earnings": Transfer.objects.filter(status=TransferStatus.COMPLETED).aggregate(total=Sum("fee_amount"))["total"] or 0,
+                "pending_transfers": request.user.bank_account.outgoing_transfers.filter(status=TransferStatus.PENDING).select_related("receiver_account")[:8],
             }
         )
     elif request.user.role == UserRole.MANAGER:
         context["users"] = User.objects.filter(role=UserRole.USER).select_related("bank_account").order_by("email")
+        context["pending_transfers"] = Transfer.objects.filter(status=TransferStatus.PENDING).select_related(
+            "sender_account", "receiver_account", "initiated_by"
+        )[:20]
     elif request.user.role == UserRole.DIRECTOR:
         context["overview"] = {
             "users_count": User.objects.filter(role=UserRole.USER).count(),
             "transactions_count": Transaction.objects.count(),
             "bank_earnings": Transfer.objects.filter(status=TransferStatus.COMPLETED).aggregate(total=Sum("fee_amount"))["total"] or 0,
             "blocked_accounts": BankAccount.objects.filter(status=AccountStatus.BLOCKED).count(),
+            "pending_transfers": Transfer.objects.filter(status=TransferStatus.PENDING).count(),
         }
     return render(request, "webui/dashboard.html", context)
 
 
 @role_required(UserRole.USER)
 def transfer_view(request):
-    form = TransferForm(request.POST or None)
+    form = TransferForm(request.POST or None, user=request.user)
     if request.method == "POST" and form.is_valid():
-        destination = get_object_or_404(BankAccount, account_number=form.cleaned_data["destination_account_number"])
         try:
-            perform_transfer(
+            create_transfer_request(
                 sender_account=request.user.bank_account,
-                receiver_account=destination,
+                receiver_account=form.destination_account,
                 amount=form.cleaned_data["amount"],
                 initiated_by=request.user,
                 swift_code=form.cleaned_data.get("swift_code", ""),
@@ -98,7 +101,7 @@ def transfer_view(request):
         except TransferError as exc:
             form.add_error(None, str(exc))
         else:
-            messages.success(request, "Transfer completed successfully.")
+            messages.success(request, "Transfer request submitted for manager approval.")
             return redirect("dashboard")
     return render(request, "webui/transfer.html", {"form": form})
 
@@ -160,3 +163,29 @@ def manager_block_account(request, account_id):
         account.save(update_fields=["status", "updated_at"])
         messages.success(request, f"Account {account.account_number} has been blocked.")
     return redirect("manager-user-detail", user_id=account.user_id)
+
+
+@role_required(UserRole.MANAGER)
+def manager_approve_transfer(request, transfer_id):
+    transfer = get_object_or_404(Transfer, pk=transfer_id)
+    if request.method == "POST":
+        try:
+            approve_pending_transfer(transfer=transfer, reviewed_by=request.user)
+        except TransferError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(request, f"Transfer #{transfer.id} approved.")
+    return redirect("dashboard")
+
+
+@role_required(UserRole.MANAGER)
+def manager_block_transfer(request, transfer_id):
+    transfer = get_object_or_404(Transfer, pk=transfer_id)
+    if request.method == "POST":
+        try:
+            block_pending_transfer(transfer=transfer, reviewed_by=request.user)
+        except TransferError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(request, f"Transfer #{transfer.id} blocked.")
+    return redirect("dashboard")

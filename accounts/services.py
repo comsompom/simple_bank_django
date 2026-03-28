@@ -1,6 +1,8 @@
 from decimal import Decimal
 import random
 
+from django.utils import timezone
+
 from accounts.models import BankAccount
 
 WELCOME_BONUS = Decimal("10000.00")
@@ -29,5 +31,6 @@ def create_account_for_user(*, user, swift_code="", with_welcome_bonus=True):
             status=TransactionStatus.COMPLETED,
             amount=WELCOME_BONUS,
             description="Automatic welcome bonus",
+            processed_at=timezone.now(),
         )
     return account

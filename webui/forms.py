@@ -1,5 +1,6 @@
 from django import forms
 from django.contrib.auth import authenticate
+from accounts.models import BankAccount
 
 from users.models import User
 from users.services import create_user_with_account
@@ -59,6 +60,23 @@ class TransferForm(forms.Form):
     amount = forms.DecimalField(max_digits=14, decimal_places=2)
     swift_code = forms.CharField(max_length=11, required=False)
     reference = forms.CharField(max_length=255, required=False)
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user", None)
+        self.destination_account = None
+        super().__init__(*args, **kwargs)
+
+    def clean_destination_account_number(self):
+        account_number = self.cleaned_data["destination_account_number"].strip()
+        try:
+            self.destination_account = BankAccount.objects.get(account_number=account_number)
+        except BankAccount.DoesNotExist as exc:
+            raise forms.ValidationError("Destination account was not found.") from exc
+
+        if self.user and self.user.is_authenticated and self.user.bank_account.account_number == account_number:
+            raise forms.ValidationError("You cannot send money to your own account.")
+
+        return account_number
 
 
 class QRForm(forms.Form):

@@ -36,7 +36,7 @@ class Transfer(models.Model):
     total_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     swift_code = models.CharField(max_length=11, blank=True)
     reference = models.CharField(max_length=255, blank=True)
-    status = models.CharField(max_length=20, choices=TransferStatus.choices, default=TransferStatus.COMPLETED)
+    status = models.CharField(max_length=20, choices=TransferStatus.choices, default=TransferStatus.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     processed_at = models.DateTimeField(null=True, blank=True)
@@ -59,7 +59,7 @@ class Transaction(models.Model):
     reference = models.CharField(max_length=255, blank=True)
     description = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    processed_at = models.DateTimeField(default=timezone.now)
+    processed_at = models.DateTimeField(null=True, blank=True, default=None)
 
     class Meta:
         ordering = ["-created_at", "-id"]
