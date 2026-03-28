@@ -1,0 +1,21 @@
+{% extends "webui/base.html" %}
+{% block content %}
+<section class="grid two-col">
+    <div class="panel">
+        <h1>Receive money QR</h1>
+        <form method="post" class="form-grid">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button class="button primary" type="submit">Generate QR</button>
+        </form>
+    </div>
+    <div class="panel">
+        {% if qr_result %}
+            <img class="qr-image" src="data:image/png;base64,{{ qr_result.png_base64 }}" alt="QR code">
+            <pre>{{ qr_result.payload }}</pre>
+        {% else %}
+            <p>Your QR code will appear here with account number, user name, and requested amount.</p>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

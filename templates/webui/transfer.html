@@ -1,0 +1,11 @@
+{% extends "webui/base.html" %}
+{% block content %}
+<section class="panel narrow">
+    <h1>Send money</h1>
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button class="button primary" type="submit">Submit transfer</button>
+    </form>
+</section>
+{% endblock %}

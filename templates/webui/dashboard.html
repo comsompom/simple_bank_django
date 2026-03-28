@@ -1,0 +1,66 @@
+{% extends "webui/base.html" %}
+{% block content %}
+{% if role == 'user' %}
+<section class="grid two-col">
+    <div class="panel">
+        <p class="eyebrow">Current balance</p>
+        <h1>EUR {{ account.balance }}</h1>
+        <p>Account {{ account.account_number }} · {{ account.status|title }}</p>
+        <p>SWIFT {{ account.swift_code|default:"Not set" }}</p>
+    </div>
+    <div class="panel">
+        <p class="eyebrow">Quick actions</p>
+        <div class="actions vertical">
+            <a class="button primary" href="{% url 'transfer' %}">Send money</a>
+            <a class="button secondary" href="{% url 'report' %}">Open report</a>
+            <a class="button secondary" href="{% url 'qr' %}">Generate QR</a>
+        </div>
+    </div>
+</section>
+<section class="panel">
+    <h2>Recent transactions</h2>
+    <table>
+        <thead><tr><th>Type</th><th>Amount</th><th>Related account</th><th>Date</th></tr></thead>
+        <tbody>
+            {% for tx in recent_transactions %}
+                <tr>
+                    <td>{{ tx.type }}</td>
+                    <td>EUR {{ tx.amount }}</td>
+                    <td>{{ tx.related_account.account_number|default:"-" }}</td>
+                    <td>{{ tx.created_at }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4">No transactions yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% elif role == 'manager' %}
+<section class="panel">
+    <h1>Manager workspace</h1>
+    <p>Review customer accounts and investigate transaction history.</p>
+    <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Account</th><th>Balance</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            {% for bank_user in users %}
+                <tr>
+                    <td>{{ bank_user.full_name }}</td>
+                    <td>{{ bank_user.email }}</td>
+                    <td>{{ bank_user.bank_account.account_number }}</td>
+                    <td>EUR {{ bank_user.bank_account.balance }}</td>
+                    <td>{{ bank_user.bank_account.status }}</td>
+                    <td><a class="button secondary small" href="{% url 'manager-user-detail' bank_user.id %}">Open</a></td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% elif role == 'director' %}
+<section class="grid cards">
+    <div class="panel"><p class="eyebrow">Users</p><h2>{{ overview.users_count }}</h2></div>
+    <div class="panel"><p class="eyebrow">Transactions</p><h2>{{ overview.transactions_count }}</h2></div>
+    <div class="panel"><p class="eyebrow">Fee earnings</p><h2>EUR {{ overview.bank_earnings }}</h2></div>
+    <div class="panel"><p class="eyebrow">Blocked accounts</p><h2>{{ overview.blocked_accounts }}</h2></div>
+</section>
+{% endif %}
+{% endblock %}

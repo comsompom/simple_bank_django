@@ -1,0 +1,29 @@
+{% extends "webui/base.html" %}
+{% block content %}
+<section class="panel">
+    <h1>{{ bank_user.full_name }}</h1>
+    <p>{{ bank_user.email }} · {{ bank_user.bank_account.account_number }} · EUR {{ bank_user.bank_account.balance }}</p>
+    <form method="post" action="{% url 'manager-block-account' bank_user.bank_account.id %}">
+        {% csrf_token %}
+        <button class="button danger" type="submit">Block account</button>
+    </form>
+</section>
+<section class="panel">
+    <h2>Transactions</h2>
+    <table>
+        <thead><tr><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+        <tbody>
+            {% for tx in transactions %}
+                <tr>
+                    <td>{{ tx.type }}</td>
+                    <td>EUR {{ tx.amount }}</td>
+                    <td>{{ tx.status }}</td>
+                    <td>{{ tx.created_at }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4">No transactions found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

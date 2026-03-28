@@ -1,0 +1,27 @@
+{% extends "webui/base.html" %}
+{% block content %}
+<section class="panel">
+    <h1>Transaction report</h1>
+    <form method="get" class="filter-row">
+        <label>From <input type="date" name="from" value="{{ from }}"></label>
+        <label>To <input type="date" name="to" value="{{ to }}"></label>
+        <button class="button secondary" type="submit">Filter</button>
+    </form>
+    <table>
+        <thead><tr><th>Type</th><th>Amount</th><th>Reference</th><th>Related account</th><th>Created</th></tr></thead>
+        <tbody>
+            {% for tx in transactions %}
+                <tr>
+                    <td>{{ tx.type }}</td>
+                    <td>EUR {{ tx.amount }}</td>
+                    <td>{{ tx.reference|default:"-" }}</td>
+                    <td>{{ tx.related_account.account_number|default:"-" }}</td>
+                    <td>{{ tx.created_at }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="5">No matching transactions.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
