@@ -3,13 +3,15 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count, Sum
+from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from accounts.models import AccountStatus, BankAccount
+from dashboard.services import get_director_count_map, get_director_overview_data
 from qr_payments.api import QRGenerateSerializer
+from qr_payments.services import build_qr_payload, build_qr_png_base64, build_signed_qr_payload
 from transactions.models import Transaction, Transfer, TransferStatus
 from transactions.services import TransferError, approve_pending_transfer, block_pending_transfer, create_transfer_request
 from users.models import User, UserRole
@@ -43,24 +45,11 @@ def _build_chart(chart_id, title, subtitle, items):
 
 
 def _build_director_dashboard_context():
-    users_count = User.objects.filter(role=UserRole.USER).count()
-    transactions_count = Transaction.objects.count()
-    bank_earnings = Transfer.objects.filter(status=TransferStatus.COMPLETED).aggregate(total=Sum("fee_amount"))["total"] or 0
-    blocked_accounts = BankAccount.objects.filter(status=AccountStatus.BLOCKED).count()
-    pending_transfers = Transfer.objects.filter(status=TransferStatus.PENDING).count()
-
-    role_counts = {
-        entry["role"]: entry["total"] for entry in User.objects.values("role").annotate(total=Count("id"))
-    }
-    transaction_type_counts = {
-        entry["type"]: entry["total"] for entry in Transaction.objects.values("type").annotate(total=Count("id"))
-    }
-    account_status_counts = {
-        entry["status"]: entry["total"] for entry in BankAccount.objects.values("status").annotate(total=Count("id"))
-    }
-    transfer_status_counts = {
-        entry["status"]: entry["total"] for entry in Transfer.objects.values("status").annotate(total=Count("id"))
-    }
+    overview = get_director_overview_data()
+    role_counts = get_director_count_map(model=User, group_field="role")
+    transaction_type_counts = get_director_count_map(model=Transaction, group_field="type")
+    account_status_counts = get_director_count_map(model=BankAccount, group_field="status")
+    transfer_status_counts = get_director_count_map(model=Transfer, group_field="status")
 
     today = timezone.now().date()
     start_day = today - timedelta(days=6)
@@ -174,21 +163,15 @@ def _build_director_dashboard_context():
     ]
 
     director_cards = [
-        {"label": "Users", "value": users_count, "chart_id": "users-chart", "prefix": "", "suffix": ""},
-        {"label": "Transactions", "value": transactions_count, "chart_id": "transactions-chart", "prefix": "", "suffix": ""},
-        {"label": "Fee earnings", "value": bank_earnings, "chart_id": "earnings-chart", "prefix": "EUR ", "suffix": ""},
-        {"label": "Blocked accounts", "value": blocked_accounts, "chart_id": "blocked-accounts-chart", "prefix": "", "suffix": ""},
-        {"label": "Pending transfers", "value": pending_transfers, "chart_id": "pending-transfers-chart", "prefix": "", "suffix": ""},
+        {"label": "Users", "value": overview["users_count"], "chart_id": "users-chart", "prefix": "", "suffix": ""},
+        {"label": "Transactions", "value": overview["transactions_count"], "chart_id": "transactions-chart", "prefix": "", "suffix": ""},
+        {"label": "Fee earnings", "value": overview["bank_earnings"], "chart_id": "earnings-chart", "prefix": "EUR ", "suffix": ""},
+        {"label": "Blocked accounts", "value": overview["blocked_accounts"], "chart_id": "blocked-accounts-chart", "prefix": "", "suffix": ""},
+        {"label": "Pending transfers", "value": overview["pending_transfers"], "chart_id": "pending-transfers-chart", "prefix": "", "suffix": ""},
     ]
 
     return {
-        "overview": {
-            "users_count": users_count,
-            "transactions_count": transactions_count,
-            "bank_earnings": bank_earnings,
-            "blocked_accounts": blocked_accounts,
-            "pending_transfers": pending_transfers,
-        },
+        "overview": overview,
         "director_cards": director_cards,
         "director_charts": director_charts,
         "default_director_chart_id": director_charts[0]["id"],
@@ -315,22 +298,17 @@ def qr_view(request):
     if request.method == "POST" and form.is_valid():
         serializer = QRGenerateSerializer(data=form.cleaned_data)
         serializer.is_valid(raise_exception=True)
+        payload = build_qr_payload(
+            account_number=request.user.bank_account.account_number,
+            user_name=request.user.full_name,
+            amount=serializer.validated_data["amount"],
+            note=serializer.validated_data.get("note", ""),
+        )
         qr_result = {
-            "payload": {
-                "account_number": request.user.bank_account.account_number,
-                "user_name": request.user.full_name,
-                "amount": str(serializer.validated_data["amount"]),
-                "note": serializer.validated_data.get("note", ""),
-            }
+            "payload": payload,
+            "signed_payload": build_signed_qr_payload(payload),
+            "png_base64": build_qr_png_base64(payload),
         }
-        import base64
-        from io import BytesIO
-        import qrcode
-
-        img = qrcode.make(qr_result["payload"])
-        buffer = BytesIO()
-        img.save(buffer, format="PNG")
-        qr_result["png_base64"] = base64.b64encode(buffer.getvalue()).decode("utf-8")
     return render(request, "webui/qr.html", {"form": form, "qr_result": qr_result})
 
 

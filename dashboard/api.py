@@ -1,19 +1,18 @@
-from django.contrib.auth import get_user_model
-from django.db.models import Sum
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import extend_schema
 from rest_framework import generics, serializers, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import AccountStatus, BankAccount
+from dashboard.services import get_director_overview_data
 from transactions.api import TransactionSerializer, TransferSerializer
 from transactions.models import Transaction, Transfer, TransferStatus
 from transactions.services import TransferError, TransferStateError, approve_pending_transfer, block_pending_transfer
 from users.api import ManagedUserCreateSerializer, UserSerializer
 from users.permissions import IsDirector, IsManager
-
-User = get_user_model()
+from users.models import User
 
 
 class ManagerBlockAccountResponseSerializer(serializers.Serializer):
@@ -69,8 +68,9 @@ class ManagerBlockAccountAPIView(APIView):
 
     def post(self, request, account_id):
         account = get_object_or_404(BankAccount, pk=account_id)
-        account.status = AccountStatus.BLOCKED
-        account.save(update_fields=["status", "updated_at"])
+        if account.status != AccountStatus.BLOCKED:
+            account.status = AccountStatus.BLOCKED
+            account.save(update_fields=["status", "updated_at"])
         return Response({"detail": "Account blocked successfully.", "account_number": account.account_number})
 
 
@@ -95,7 +95,7 @@ class ManagerApproveTransferAPIView(APIView):
         try:
             transfer = approve_pending_transfer(transfer=transfer, reviewed_by=request.user)
         except (TransferError, TransferStateError) as exc:
-            raise serializers.ValidationError({"detail": str(exc)}) from exc
+            raise ValidationError({"detail": str(exc)}) from exc
         return Response(TransferSerializer(transfer).data)
 
 
@@ -109,7 +109,7 @@ class ManagerBlockTransferAPIView(APIView):
         try:
             transfer = block_pending_transfer(transfer=transfer, reviewed_by=request.user)
         except (TransferError, TransferStateError) as exc:
-            raise serializers.ValidationError({"detail": str(exc)}) from exc
+            raise ValidationError({"detail": str(exc)}) from exc
         return Response(TransferSerializer(transfer).data)
 
 
@@ -119,16 +119,4 @@ class DirectorOverviewAPIView(APIView):
     serializer_class = DirectorOverviewSerializer
 
     def get(self, request):
-        total_fee_earnings = (
-            Transfer.objects.filter(status=TransferStatus.COMPLETED).aggregate(total=Sum("fee_amount"))["total"]
-            or 0
-        )
-        return Response(
-            {
-                "users_count": User.objects.filter(role="user").count(),
-                "transactions_count": Transaction.objects.count(),
-                "bank_earnings": total_fee_earnings,
-                "blocked_accounts": BankAccount.objects.filter(status=AccountStatus.BLOCKED).count(),
-                "pending_transfers": Transfer.objects.filter(status=TransferStatus.PENDING).count(),
-            }
-        )
+        return Response(get_director_overview_data())

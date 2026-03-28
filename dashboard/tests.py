@@ -3,9 +3,9 @@ from decimal import Decimal
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from transactions.models import TransferStatus
-from users.models import UserRole
+from users.models import User, UserRole
 from users.services import create_user_with_account
+from transactions.models import TransferStatus
 
 
 class RoleApiTests(APITestCase):
@@ -53,12 +53,40 @@ class RoleApiTests(APITestCase):
         self.client.credentials()
         return transfer_id
 
+    def test_manager_can_list_users(self):
+        self.auth("manager@example.com")
+        response = self.client.get("/api/v1/manager/users/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(response.data["count"], 2)
+
+    def test_manager_can_create_account(self):
+        self.auth("manager@example.com")
+        response = self.client.post(
+            "/api/v1/manager/accounts/create/",
+            {
+                "email": "created@example.com",
+                "full_name": "Created User",
+                "password": "Passw0rd!234",
+                "swift_code": "BANKDEFF",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(User.objects.filter(email="created@example.com").exists())
+
     def test_manager_can_block_account(self):
         self.auth("manager@example.com")
         response = self.client.post(f"/api/v1/manager/accounts/{self.user.bank_account.id}/block/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.user.bank_account.refresh_from_db()
         self.assertEqual(self.user.bank_account.status, "blocked")
+
+    def test_manager_can_read_user_transactions(self):
+        self.create_pending_transfer_as_user()
+        self.auth("manager@example.com")
+        response = self.client.get(f"/api/v1/manager/users/{self.user.id}/transactions/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(response.data["count"], 1)
 
     def test_manager_can_list_and_approve_pending_transfer(self):
         transfer_id = self.create_pending_transfer_as_user()
@@ -96,7 +124,24 @@ class RoleApiTests(APITestCase):
         self.assertIn("transactions_count", response.data)
         self.assertIn("pending_transfers", response.data)
 
+    def test_non_manager_cannot_access_manager_endpoints(self):
+        self.auth("user@example.com")
+        response = self.client.get("/api/v1/manager/users/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_non_director_cannot_access_director_endpoint(self):
+        self.auth("manager@example.com")
+        response = self.client.get("/api/v1/director/reports/overview/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_openapi_schema_is_available(self):
         self.client.credentials()
         response = self.client.get("/api/schema/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_swagger_and_redoc_pages_are_available(self):
+        self.client.credentials()
+        swagger = self.client.get("/api/docs/swagger/")
+        redoc = self.client.get("/api/docs/redoc/")
+        self.assertEqual(swagger.status_code, status.HTTP_200_OK)
+        self.assertEqual(redoc.status_code, status.HTTP_200_OK)

@@ -1,7 +1,8 @@
 from django import forms
 from django.contrib.auth import authenticate
-from accounts.models import BankAccount
 
+from accounts.models import BankAccount
+from transactions.services import validate_swift_code
 from users.models import User
 from users.services import create_user_with_account
 
@@ -112,10 +113,10 @@ class TransferForm(forms.Form):
         return account_number
 
     def clean_swift_code(self):
-        swift_code = self.cleaned_data["swift_code"].strip().upper()
-        if swift_code and len(swift_code) not in {8, 11}:
-            raise forms.ValidationError("SWIFT / BIC code must be 8 or 11 characters long.")
-        return swift_code
+        try:
+            return validate_swift_code(self.cleaned_data["swift_code"])
+        except Exception as exc:
+            raise forms.ValidationError(str(exc)) from exc
 
 
 class QRForm(forms.Form):

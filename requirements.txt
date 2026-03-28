@@ -9,4 +9,5 @@ pillow
 psycopg[binary]
 pytest
 pytest-django
+pytest-cov
 locust

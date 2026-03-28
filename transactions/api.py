@@ -3,10 +3,17 @@ from django.utils.dateparse import parse_date
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import generics, serializers
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from accounts.models import BankAccount
 from transactions.models import Transaction, Transfer
-from transactions.services import TransferError, calculate_transfer_fee, create_transfer_request
+from transactions.services import (
+    IdempotencyConflictError,
+    TransferError,
+    calculate_transfer_fee,
+    create_transfer_request,
+    validate_swift_code,
+)
 
 
 class TransactionSerializer(serializers.ModelSerializer):
@@ -62,9 +69,24 @@ class TransferCreateSerializer(serializers.Serializer):
     reference = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
     def validate_destination_account_number(self, value):
-        if not BankAccount.objects.filter(account_number=value).exists():
+        cleaned = value.strip()
+        if not cleaned.isdigit() or len(cleaned) != 10:
+            raise serializers.ValidationError("Destination account number must contain exactly 10 digits.")
+        if not BankAccount.objects.filter(account_number=cleaned).exists():
             raise serializers.ValidationError("Destination account does not exist.")
-        return value
+        return cleaned
+
+    def validate_swift_code(self, value):
+        try:
+            return validate_swift_code(value)
+        except TransferError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
+    def validate(self, attrs):
+        sender_account = self.context["request"].user.bank_account
+        if attrs["destination_account_number"] == sender_account.account_number:
+            raise serializers.ValidationError({"destination_account_number": "You cannot transfer to the same account."})
+        return attrs
 
     def create(self, validated_data):
         sender_account = self.context["request"].user.bank_account
@@ -77,7 +99,10 @@ class TransferCreateSerializer(serializers.Serializer):
                 initiated_by=self.context["request"].user,
                 swift_code=validated_data.get("swift_code", ""),
                 reference=validated_data.get("reference", ""),
+                idempotency_key=self.context["request"].headers.get("Idempotency-Key", ""),
             )
+        except IdempotencyConflictError as exc:
+            raise serializers.ValidationError({"detail": str(exc)}) from exc
         except TransferError as exc:
             raise serializers.ValidationError({"detail": str(exc)}) from exc
 
@@ -123,10 +148,29 @@ class TransactionListAPIView(generics.ListAPIView):
             OpenApiParameter(name="status", type=str, location=OpenApiParameter.QUERY, description="Transfer status filter"),
         ],
     ),
-    post=extend_schema(tags=["Transfers"], request=TransferCreateSerializer, responses={201: TransferSerializer}),
+    post=extend_schema(
+        tags=["Transfers"],
+        request=TransferCreateSerializer,
+        responses={201: TransferSerializer},
+        parameters=[
+            OpenApiParameter(
+                name="Idempotency-Key",
+                type=str,
+                location=OpenApiParameter.HEADER,
+                description="Optional key to make transfer creation idempotent for retries.",
+            )
+        ],
+    ),
 )
 class TransferListCreateAPIView(generics.ListCreateAPIView):
     queryset = Transfer.objects.none()
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "transfer_write"
+
+    def get_throttles(self):
+        if self.request.method == "POST":
+            return [throttle() for throttle in self.throttle_classes]
+        return []
 
     def get_serializer_class(self):
         if self.request.method == "POST":

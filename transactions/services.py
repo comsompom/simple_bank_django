@@ -1,7 +1,6 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction as db_transaction
-from django.utils import timezone
 
 from accounts.models import AccountStatus, BankAccount
 from transactions.models import Transaction, TransactionStatus, TransactionType, Transfer, TransferStatus
@@ -19,6 +18,17 @@ class TransferStateError(TransferError):
     pass
 
 
+class IdempotencyConflictError(TransferError):
+    pass
+
+
+def validate_swift_code(swift_code):
+    normalized = (swift_code or "").strip().upper()
+    if normalized and len(normalized) not in {8, 11}:
+        raise TransferError("SWIFT / BIC code must be 8 or 11 characters long.")
+    return normalized
+
+
 def calculate_transfer_fee(amount):
     if amount <= 0:
         raise TransferError("Amount must be greater than zero.")
@@ -34,8 +44,27 @@ def _get_locked_accounts(sender_account_id, receiver_account_id):
 
 
 @db_transaction.atomic
-def create_transfer_request(*, sender_account, receiver_account, amount, initiated_by=None, swift_code="", reference=""):
+def create_transfer_request(*, sender_account, receiver_account, amount, initiated_by=None, swift_code="", reference="", idempotency_key=""):
     amount = Decimal(amount).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+    normalized_swift = validate_swift_code(swift_code)
+    normalized_idempotency_key = (idempotency_key or "").strip() or None
+
+    if normalized_idempotency_key and initiated_by is not None:
+        existing_transfer = Transfer.objects.filter(
+            initiated_by=initiated_by,
+            idempotency_key=normalized_idempotency_key,
+        ).first()
+        if existing_transfer:
+            if (
+                existing_transfer.sender_account_id != sender_account.id
+                or existing_transfer.receiver_account_id != receiver_account.id
+                or existing_transfer.amount != amount
+                or existing_transfer.reference != reference
+                or existing_transfer.swift_code != normalized_swift
+            ):
+                raise IdempotencyConflictError("This Idempotency-Key was already used for a different transfer request.")
+            return existing_transfer
+
     if sender_account.id == receiver_account.id:
         raise TransferError("You cannot transfer to the same account.")
     if amount <= 0:
@@ -62,10 +91,11 @@ def create_transfer_request(*, sender_account, receiver_account, amount, initiat
         sender_account=sender,
         receiver_account=receiver,
         initiated_by=initiated_by,
+        idempotency_key=normalized_idempotency_key,
         amount=amount,
         fee_amount=fee,
         total_amount=total,
-        swift_code=swift_code,
+        swift_code=normalized_swift,
         reference=reference,
         status=TransferStatus.PENDING,
     )
@@ -110,6 +140,8 @@ def create_transfer_request(*, sender_account, receiver_account, amount, initiat
 @db_transaction.atomic
 def approve_pending_transfer(*, transfer, reviewed_by):
     locked_transfer = Transfer.objects.select_for_update().select_related("sender_account", "receiver_account").get(pk=transfer.pk)
+    if locked_transfer.status == TransferStatus.COMPLETED:
+        return locked_transfer
     if locked_transfer.status != TransferStatus.PENDING:
         raise TransferStateError("Only pending transfers can be approved.")
 
@@ -130,6 +162,8 @@ def approve_pending_transfer(*, transfer, reviewed_by):
     sender.save(update_fields=["reserved_balance", "balance", "updated_at"])
     receiver.save(update_fields=["balance", "updated_at"])
 
+    from django.utils import timezone
+
     processed_at = timezone.now()
     locked_transfer.status = TransferStatus.COMPLETED
     locked_transfer.reviewed_by = reviewed_by
@@ -143,6 +177,8 @@ def approve_pending_transfer(*, transfer, reviewed_by):
 @db_transaction.atomic
 def block_pending_transfer(*, transfer, reviewed_by):
     locked_transfer = Transfer.objects.select_for_update().select_related("sender_account").get(pk=transfer.pk)
+    if locked_transfer.status == TransferStatus.BLOCKED:
+        return locked_transfer
     if locked_transfer.status != TransferStatus.PENDING:
         raise TransferStateError("Only pending transfers can be blocked.")
 
@@ -152,6 +188,8 @@ def block_pending_transfer(*, transfer, reviewed_by):
 
     sender.reserved_balance -= locked_transfer.total_amount
     sender.save(update_fields=["reserved_balance", "updated_at"])
+
+    from django.utils import timezone
 
     processed_at = timezone.now()
     locked_transfer.status = TransferStatus.BLOCKED

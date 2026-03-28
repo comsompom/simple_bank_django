@@ -2,7 +2,6 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
-from django.utils import timezone
 
 
 class TransactionType(models.TextChoices):
@@ -31,6 +30,7 @@ class Transfer(models.Model):
     receiver_account = models.ForeignKey("accounts.BankAccount", on_delete=models.CASCADE, related_name="incoming_transfers")
     initiated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_transfers")
+    idempotency_key = models.CharField(max_length=128, null=True, blank=True)
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     fee_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     total_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
@@ -43,6 +43,12 @@ class Transfer(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["initiated_by", "idempotency_key"],
+                name="unique_transfer_idempotency_key_per_user",
+            )
+        ]
 
     def __str__(self):
         return f"{self.sender_account.account_number} -> {self.receiver_account.account_number} ({self.amount})"

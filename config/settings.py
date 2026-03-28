@@ -14,6 +14,7 @@ SECRET_KEY = os.getenv(
 DEBUG = os.getenv("DEBUG", "true").lower() == "true"
 ALLOWED_HOSTS = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if host.strip()]
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if origin.strip()]
+ENABLE_API_DOCS = os.getenv("ENABLE_API_DOCS", str(DEBUG).lower()).lower() == "true"
 
 DB_ENGINE = os.getenv("DB_ENGINE", "sqlite").lower()
 if DB_ENGINE == "postgresql":
@@ -110,7 +111,6 @@ LOGOUT_REDIRECT_URL = "/"
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
@@ -121,6 +121,19 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_CLASSES": (
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.ScopedRateThrottle",
+    ),
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "200/hour",
+        "user": "2000/hour",
+        "auth_login": "30/minute",
+        "auth_register": "20/hour",
+        "transfer_write": "120/hour",
+        "qr_generate": "240/hour",
+    },
     "PAGE_SIZE": 20,
 }
 
