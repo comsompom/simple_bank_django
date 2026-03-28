@@ -3,7 +3,7 @@
 <section class="panel">
     <h1>{{ bank_user.full_name }}</h1>
     <p>{{ bank_user.email }} - {{ bank_user.bank_account.account_number }} - EUR {{ bank_user.bank_account.balance }}</p>
-    <form method="post" action="{% url 'manager-block-account' bank_user.bank_account.id %}">
+    <form method="post" action="{% url 'webui-manager-block-account' bank_user.bank_account.id %}">
         {% csrf_token %}
         <button class="button danger" type="submit">Block account</button>
     </form>

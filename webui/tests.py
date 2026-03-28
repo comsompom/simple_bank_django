@@ -1,6 +1,8 @@
 from django.test import TestCase
 from django.urls import reverse
 
+from transactions.models import TransferStatus
+from transactions.services import create_transfer_request
 from users.services import create_user_with_account
 from users.models import UserRole
 
@@ -69,3 +71,51 @@ class DirectorDashboardTests(TestCase):
         self.assertContains(response, "User role distribution")
         self.assertContains(response, 'data-chart-trigger', html=False)
         self.assertContains(response, 'data-chart-panel', html=False)
+
+
+class ManagerDashboardActionTests(TestCase):
+    def setUp(self):
+        self.user = create_user_with_account(
+            email="managed-user@example.com",
+            password="Passw0rd!234",
+            full_name="Managed User",
+        )
+        self.receiver = create_user_with_account(
+            email="managed-receiver@example.com",
+            password="Passw0rd!234",
+            full_name="Managed Receiver",
+        )
+        self.manager = create_user_with_account(
+            email="manager-ui@example.com",
+            password="Passw0rd!234",
+            full_name="Manager UI",
+            role=UserRole.MANAGER,
+        )
+        self.transfer = create_transfer_request(
+            sender_account=self.user.bank_account,
+            receiver_account=self.receiver.bank_account,
+            amount="100.00",
+            initiated_by=self.user,
+        )
+        self.client.force_login(self.manager)
+
+    def test_manager_dashboard_approve_action_uses_web_route(self):
+        response = self.client.post(reverse("webui-manager-approve-transfer", args=[self.transfer.id]))
+
+        self.assertEqual(response.status_code, 302)
+        self.transfer.refresh_from_db()
+        self.assertEqual(self.transfer.status, TransferStatus.COMPLETED)
+
+    def test_manager_dashboard_block_action_uses_web_route(self):
+        transfer = create_transfer_request(
+            sender_account=self.user.bank_account,
+            receiver_account=self.receiver.bank_account,
+            amount="50.00",
+            initiated_by=self.user,
+        )
+
+        response = self.client.post(reverse("webui-manager-block-transfer", args=[transfer.id]))
+
+        self.assertEqual(response.status_code, 302)
+        transfer.refresh_from_db()
+        self.assertEqual(transfer.status, TransferStatus.BLOCKED)

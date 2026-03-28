@@ -326,7 +326,7 @@ def manager_block_account(request, account_id):
         account.status = AccountStatus.BLOCKED
         account.save(update_fields=["status", "updated_at"])
         messages.success(request, f"Account {account.account_number} has been blocked.")
-    return redirect("manager-user-detail", user_id=account.user_id)
+    return redirect("webui-manager-user-detail", user_id=account.user_id)
 
 
 @role_required(UserRole.MANAGER)

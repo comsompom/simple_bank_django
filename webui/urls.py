@@ -11,8 +11,8 @@ urlpatterns = [
     path("app/transfer/", views.transfer_view, name="transfer"),
     path("app/report/", views.report_view, name="report"),
     path("app/qr/", views.qr_view, name="qr"),
-    path("app/manager/users/<int:user_id>/", views.manager_user_detail, name="manager-user-detail"),
-    path("app/manager/accounts/<int:account_id>/block/", views.manager_block_account, name="manager-block-account"),
-    path("app/manager/transfers/<int:transfer_id>/approve/", views.manager_approve_transfer, name="manager-approve-transfer"),
-    path("app/manager/transfers/<int:transfer_id>/block/", views.manager_block_transfer, name="manager-block-transfer"),
+    path("app/manager/users/<int:user_id>/", views.manager_user_detail, name="webui-manager-user-detail"),
+    path("app/manager/accounts/<int:account_id>/block/", views.manager_block_account, name="webui-manager-block-account"),
+    path("app/manager/transfers/<int:transfer_id>/approve/", views.manager_approve_transfer, name="webui-manager-approve-transfer"),
+    path("app/manager/transfers/<int:transfer_id>/block/", views.manager_block_transfer, name="webui-manager-block-transfer"),
 ]

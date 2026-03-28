@@ -84,8 +84,8 @@
                     <td>EUR {{ transfer.fee_amount }}</td>
                     <td>{{ transfer.reference|default:"-" }}</td>
                     <td>
-                        <form method="post" action="{% url 'manager-approve-transfer' transfer.id %}" class="inline-form">{% csrf_token %}<button class="button primary small" type="submit">Approve</button></form>
-                        <form method="post" action="{% url 'manager-block-transfer' transfer.id %}" class="inline-form">{% csrf_token %}<button class="button danger small" type="submit">Block</button></form>
+                        <form method="post" action="{% url 'webui-manager-approve-transfer' transfer.id %}" class="inline-form">{% csrf_token %}<button class="button primary small" type="submit">Approve</button></form>
+                        <form method="post" action="{% url 'webui-manager-block-transfer' transfer.id %}" class="inline-form">{% csrf_token %}<button class="button danger small" type="submit">Block</button></form>
                     </td>
                 </tr>
             {% empty %}
@@ -107,7 +107,7 @@
                     <td>EUR {{ bank_user.bank_account.balance }}</td>
                     <td>EUR {{ bank_user.bank_account.reserved_balance }}</td>
                     <td>{{ bank_user.bank_account.status }}</td>
-                    <td><a class="button secondary small" href="{% url 'manager-user-detail' bank_user.id %}">Open</a></td>
+                    <td><a class="button secondary small" href="{% url 'webui-manager-user-detail' bank_user.id %}">Open</a></td>
                 </tr>
             {% endfor %}
         </tbody>
