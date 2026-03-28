@@ -83,8 +83,75 @@ th, td { padding: 14px 12px; border-bottom: 1px solid var(--border); text-align:
 .filter-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: end; }
 .qr-image { width: 240px; height: 240px; background: white; padding: 12px; border-radius: 16px; }
 pre { white-space: pre-wrap; word-break: break-word; background: rgba(255,255,255,0.06); padding: 12px; border-radius: 12px; }
+.panel-divider { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
+.hint-list { margin: 0; padding-left: 20px; color: var(--muted); }
+.hint-list li { margin-bottom: 10px; }
+.helptext { color: var(--muted); font-size: 13px; }
+.errorlist { color: #ffd0d5; margin: 0 0 8px; padding-left: 18px; }
+.director-card {
+    text-align: left;
+    color: var(--text);
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.director-card:hover,
+.director-card.active {
+    transform: translateY(-3px);
+    border-color: rgba(92, 184, 255, 0.45);
+    box-shadow: 0 24px 54px rgba(0, 0, 0, 0.32);
+}
+.director-card-hint,
+.director-chart-help,
+.director-chart-subtitle {
+    color: var(--muted);
+}
+.director-chart-shell {
+    margin-top: 24px;
+}
+.director-chart-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: end;
+}
+.director-chart-panel {
+    display: none;
+    margin-top: 24px;
+}
+.director-chart-panel.active {
+    display: block;
+}
+.director-chart-bars {
+    display: grid;
+    gap: 16px;
+}
+.director-chart-row {
+    display: grid;
+    gap: 8px;
+}
+.director-chart-labels {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+}
+.director-chart-track {
+    height: 16px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+.director-chart-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--accent), var(--primary));
+}
 @media (max-width: 640px) {
     .topbar { flex-direction: column; gap: 12px; padding: 20px; }
     .hero h1, .panel h1 { font-size: 30px; }
+    .director-chart-labels {
+        flex-direction: column;
+        align-items: start;
+    }
 }
 .inline-form { display: inline-block; margin-right: 8px; }

@@ -115,11 +115,75 @@
 </section>
 {% elif role == 'director' %}
 <section class="grid cards">
-    <div class="panel"><p class="eyebrow">Users</p><h2>{{ overview.users_count }}</h2></div>
-    <div class="panel"><p class="eyebrow">Transactions</p><h2>{{ overview.transactions_count }}</h2></div>
-    <div class="panel"><p class="eyebrow">Fee earnings</p><h2>EUR {{ overview.bank_earnings }}</h2></div>
-    <div class="panel"><p class="eyebrow">Blocked accounts</p><h2>{{ overview.blocked_accounts }}</h2></div>
-    <div class="panel"><p class="eyebrow">Pending transfers</p><h2>{{ overview.pending_transfers }}</h2></div>
+    {% for card in director_cards %}
+        <button
+            class="panel director-card{% if card.chart_id == default_director_chart_id %} active{% endif %}"
+            type="button"
+            data-chart-trigger
+            data-chart-target="{{ card.chart_id }}"
+        >
+            <p class="eyebrow">{{ card.label }}</p>
+            <h2>{{ card.prefix }}{{ card.value }}{{ card.suffix }}</h2>
+            <p class="director-card-hint">Click to open detailed chart</p>
+        </button>
+    {% endfor %}
 </section>
+<section class="panel director-chart-shell">
+    <div class="director-chart-header">
+        <div>
+            <p class="eyebrow">Interactive insights</p>
+            <h2>Detailed charts</h2>
+        </div>
+        <p class="director-chart-help">Select any KPI card above to switch the chart shown below.</p>
+    </div>
+    {% for chart in director_charts %}
+        <div
+            class="director-chart-panel{% if chart.id == default_director_chart_id %} active{% endif %}"
+            data-chart-panel
+            id="{{ chart.id }}"
+        >
+            <h3>{{ chart.title }}</h3>
+            <p class="director-chart-subtitle">{{ chart.subtitle }}</p>
+            <div class="director-chart-bars">
+                {% for item in chart.items %}
+                    <div class="director-chart-row">
+                        <div class="director-chart-labels">
+                            <span>{{ item.label }}</span>
+                            <strong>{{ item.display_value }}</strong>
+                        </div>
+                        <div class="director-chart-track">
+                            <div class="director-chart-fill" style="width: {{ item.width_percent }}%;"></div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endfor %}
+</section>
+<script>
+    (function () {
+        const triggers = document.querySelectorAll("[data-chart-trigger]");
+        const panels = document.querySelectorAll("[data-chart-panel]");
+        if (!triggers.length || !panels.length) {
+            return;
+        }
+
+        triggers.forEach((trigger) => {
+            trigger.addEventListener("click", () => {
+                const targetId = trigger.getAttribute("data-chart-target");
+
+                triggers.forEach((item) => item.classList.remove("active"));
+                panels.forEach((panel) => panel.classList.remove("active"));
+
+                trigger.classList.add("active");
+                const targetPanel = document.getElementById(targetId);
+                if (targetPanel) {
+                    targetPanel.classList.add("active");
+                    targetPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                }
+            });
+        });
+    }());
+</script>
 {% endif %}
 {% endblock %}

@@ -1,8 +1,11 @@
+from datetime import timedelta
+
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
-from django.db.models import Sum
+from django.db.models import Count, Sum
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from accounts.models import AccountStatus, BankAccount
@@ -11,6 +14,185 @@ from transactions.models import Transaction, Transfer, TransferStatus
 from transactions.services import TransferError, approve_pending_transfer, block_pending_transfer, create_transfer_request
 from users.models import User, UserRole
 from webui.forms import EmailAuthenticationForm, QRForm, RegisterForm, TransferForm
+
+
+def _build_chart(chart_id, title, subtitle, items):
+    max_value = max((item["value"] for item in items), default=0)
+    normalized_items = []
+    for item in items:
+        value = item["value"]
+        width_percent = 0
+        if max_value:
+            width_percent = round((value / max_value) * 100, 1)
+            if value and width_percent < 8:
+                width_percent = 8
+        normalized_items.append(
+            {
+                "label": item["label"],
+                "value": value,
+                "display_value": item["display_value"],
+                "width_percent": width_percent,
+            }
+        )
+    return {
+        "id": chart_id,
+        "title": title,
+        "subtitle": subtitle,
+        "items": normalized_items,
+    }
+
+
+def _build_director_dashboard_context():
+    users_count = User.objects.filter(role=UserRole.USER).count()
+    transactions_count = Transaction.objects.count()
+    bank_earnings = Transfer.objects.filter(status=TransferStatus.COMPLETED).aggregate(total=Sum("fee_amount"))["total"] or 0
+    blocked_accounts = BankAccount.objects.filter(status=AccountStatus.BLOCKED).count()
+    pending_transfers = Transfer.objects.filter(status=TransferStatus.PENDING).count()
+
+    role_counts = {
+        entry["role"]: entry["total"] for entry in User.objects.values("role").annotate(total=Count("id"))
+    }
+    transaction_type_counts = {
+        entry["type"]: entry["total"] for entry in Transaction.objects.values("type").annotate(total=Count("id"))
+    }
+    account_status_counts = {
+        entry["status"]: entry["total"] for entry in BankAccount.objects.values("status").annotate(total=Count("id"))
+    }
+    transfer_status_counts = {
+        entry["status"]: entry["total"] for entry in Transfer.objects.values("status").annotate(total=Count("id"))
+    }
+
+    today = timezone.now().date()
+    start_day = today - timedelta(days=6)
+    fee_totals = {start_day + timedelta(days=offset): 0 for offset in range(7)}
+    for transfer in Transfer.objects.filter(status=TransferStatus.COMPLETED, processed_at__date__gte=start_day):
+        fee_totals[transfer.processed_at.date()] += float(transfer.fee_amount)
+
+    director_charts = [
+        _build_chart(
+            "users-chart",
+            "User role distribution",
+            "How accounts are split across the platform.",
+            [
+                {"label": "Users", "value": role_counts.get(UserRole.USER, 0), "display_value": str(role_counts.get(UserRole.USER, 0))},
+                {
+                    "label": "Managers",
+                    "value": role_counts.get(UserRole.MANAGER, 0),
+                    "display_value": str(role_counts.get(UserRole.MANAGER, 0)),
+                },
+                {
+                    "label": "Directors",
+                    "value": role_counts.get(UserRole.DIRECTOR, 0),
+                    "display_value": str(role_counts.get(UserRole.DIRECTOR, 0)),
+                },
+            ],
+        ),
+        _build_chart(
+            "transactions-chart",
+            "Transaction type activity",
+            "Distribution across credits, debits, fees, and bonuses.",
+            [
+                {
+                    "label": "Credits",
+                    "value": transaction_type_counts.get("credit", 0),
+                    "display_value": str(transaction_type_counts.get("credit", 0)),
+                },
+                {
+                    "label": "Debits",
+                    "value": transaction_type_counts.get("debit", 0),
+                    "display_value": str(transaction_type_counts.get("debit", 0)),
+                },
+                {
+                    "label": "Fees",
+                    "value": transaction_type_counts.get("fee", 0),
+                    "display_value": str(transaction_type_counts.get("fee", 0)),
+                },
+                {
+                    "label": "Welcome bonuses",
+                    "value": transaction_type_counts.get("welcome_bonus", 0),
+                    "display_value": str(transaction_type_counts.get("welcome_bonus", 0)),
+                },
+            ],
+        ),
+        _build_chart(
+            "earnings-chart",
+            "Fee earnings over the last 7 days",
+            "Completed transfer fees recognized as bank earnings.",
+            [
+                {
+                    "label": day.strftime("%a"),
+                    "value": fee_totals[day],
+                    "display_value": f"EUR {fee_totals[day]:.2f}",
+                }
+                for day in fee_totals
+            ],
+        ),
+        _build_chart(
+            "blocked-accounts-chart",
+            "Account status overview",
+            "Active versus blocked customer accounts.",
+            [
+                {
+                    "label": "Active",
+                    "value": account_status_counts.get(AccountStatus.ACTIVE, 0),
+                    "display_value": str(account_status_counts.get(AccountStatus.ACTIVE, 0)),
+                },
+                {
+                    "label": "Blocked",
+                    "value": account_status_counts.get(AccountStatus.BLOCKED, 0),
+                    "display_value": str(account_status_counts.get(AccountStatus.BLOCKED, 0)),
+                },
+            ],
+        ),
+        _build_chart(
+            "pending-transfers-chart",
+            "Transfer pipeline status",
+            "Current state of the transfer review workflow.",
+            [
+                {
+                    "label": "Pending",
+                    "value": transfer_status_counts.get(TransferStatus.PENDING, 0),
+                    "display_value": str(transfer_status_counts.get(TransferStatus.PENDING, 0)),
+                },
+                {
+                    "label": "Completed",
+                    "value": transfer_status_counts.get(TransferStatus.COMPLETED, 0),
+                    "display_value": str(transfer_status_counts.get(TransferStatus.COMPLETED, 0)),
+                },
+                {
+                    "label": "Blocked",
+                    "value": transfer_status_counts.get(TransferStatus.BLOCKED, 0),
+                    "display_value": str(transfer_status_counts.get(TransferStatus.BLOCKED, 0)),
+                },
+                {
+                    "label": "Failed",
+                    "value": transfer_status_counts.get(TransferStatus.FAILED, 0),
+                    "display_value": str(transfer_status_counts.get(TransferStatus.FAILED, 0)),
+                },
+            ],
+        ),
+    ]
+
+    director_cards = [
+        {"label": "Users", "value": users_count, "chart_id": "users-chart", "prefix": "", "suffix": ""},
+        {"label": "Transactions", "value": transactions_count, "chart_id": "transactions-chart", "prefix": "", "suffix": ""},
+        {"label": "Fee earnings", "value": bank_earnings, "chart_id": "earnings-chart", "prefix": "EUR ", "suffix": ""},
+        {"label": "Blocked accounts", "value": blocked_accounts, "chart_id": "blocked-accounts-chart", "prefix": "", "suffix": ""},
+        {"label": "Pending transfers", "value": pending_transfers, "chart_id": "pending-transfers-chart", "prefix": "", "suffix": ""},
+    ]
+
+    return {
+        "overview": {
+            "users_count": users_count,
+            "transactions_count": transactions_count,
+            "bank_earnings": bank_earnings,
+            "blocked_accounts": blocked_accounts,
+            "pending_transfers": pending_transfers,
+        },
+        "director_cards": director_cards,
+        "director_charts": director_charts,
+        "default_director_chart_id": director_charts[0]["id"],
+    }
 
 
 def role_required(*roles):
@@ -75,23 +257,19 @@ def dashboard(request):
             "sender_account", "receiver_account", "initiated_by"
         )[:20]
     elif request.user.role == UserRole.DIRECTOR:
-        context["overview"] = {
-            "users_count": User.objects.filter(role=UserRole.USER).count(),
-            "transactions_count": Transaction.objects.count(),
-            "bank_earnings": Transfer.objects.filter(status=TransferStatus.COMPLETED).aggregate(total=Sum("fee_amount"))["total"] or 0,
-            "blocked_accounts": BankAccount.objects.filter(status=AccountStatus.BLOCKED).count(),
-            "pending_transfers": Transfer.objects.filter(status=TransferStatus.PENDING).count(),
-        }
+        context.update(_build_director_dashboard_context())
     return render(request, "webui/dashboard.html", context)
 
 
 @role_required(UserRole.USER)
 def transfer_view(request):
     form = TransferForm(request.POST or None, user=request.user)
+    account = request.user.bank_account
+    estimated_fee = "5.00"
     if request.method == "POST" and form.is_valid():
         try:
             create_transfer_request(
-                sender_account=request.user.bank_account,
+                sender_account=account,
                 receiver_account=form.destination_account,
                 amount=form.cleaned_data["amount"],
                 initiated_by=request.user,
@@ -103,7 +281,15 @@ def transfer_view(request):
         else:
             messages.success(request, "Transfer request submitted for manager approval.")
             return redirect("dashboard")
-    return render(request, "webui/transfer.html", {"form": form})
+    return render(
+        request,
+        "webui/transfer.html",
+        {
+            "form": form,
+            "account": account,
+            "estimated_fee": estimated_fee,
+        },
+    )
 
 
 @role_required(UserRole.USER)

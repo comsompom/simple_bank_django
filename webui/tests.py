@@ -2,6 +2,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from users.services import create_user_with_account
+from users.models import UserRole
 
 
 class TransferPageTests(TestCase):
@@ -40,3 +41,31 @@ class TransferPageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "You cannot send money to your own account.")
+
+    def test_transfer_page_shows_account_guidance(self):
+        response = self.client.get(reverse("transfer"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.user.bank_account.account_number)
+        self.assertContains(response, "Destination account number must contain exactly 10 digits.")
+
+
+class DirectorDashboardTests(TestCase):
+    def setUp(self):
+        self.director = create_user_with_account(
+            email="director-ui@example.com",
+            password="Passw0rd!234",
+            full_name="Director UI",
+            role=UserRole.DIRECTOR,
+        )
+        self.client.force_login(self.director)
+
+    def test_director_dashboard_includes_chart_triggers_and_panels(self):
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Click to open detailed chart")
+        self.assertContains(response, "Detailed charts")
+        self.assertContains(response, "User role distribution")
+        self.assertContains(response, 'data-chart-trigger', html=False)
+        self.assertContains(response, 'data-chart-panel', html=False)

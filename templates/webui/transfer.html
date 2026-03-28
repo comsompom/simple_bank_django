@@ -1,11 +1,31 @@
 {% extends "webui/base.html" %}
 {% block content %}
-<section class="panel narrow">
-    <h1>Send money</h1>
-    <form method="post" class="form-grid">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <button class="button primary" type="submit">Submit transfer</button>
-    </form>
+<section class="grid two-col">
+    <div class="panel">
+        <p class="eyebrow">Transfer request</p>
+        <h1>Send money</h1>
+        <p>Submit a transfer request to another 10-digit account. A manager must approve it before the money is settled.</p>
+        <form method="post" class="form-grid">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button class="button primary" type="submit">Submit transfer request</button>
+        </form>
+    </div>
+    <div class="panel">
+        <p class="eyebrow">Your account</p>
+        <h2>{{ account.account_number }}</h2>
+        <p>Ledger balance: EUR {{ account.balance }}</p>
+        <p>Reserved balance: EUR {{ account.reserved_balance }}</p>
+        <p>Available balance: EUR {{ account.available_balance }}</p>
+        <p>SWIFT / BIC: {{ account.swift_code|default:"Not set" }}</p>
+        <hr class="panel-divider">
+        <p class="eyebrow">Before you submit</p>
+        <ul class="hint-list">
+            <li>Destination account number must contain exactly 10 digits.</li>
+            <li>Minimum fee is EUR {{ estimated_fee }}.</li>
+            <li>You cannot transfer to your own account.</li>
+            <li>The transfer remains pending until a manager approves it.</li>
+        </ul>
+    </div>
 </section>
 {% endblock %}

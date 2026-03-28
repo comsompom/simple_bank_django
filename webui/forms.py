@@ -56,10 +56,41 @@ class EmailAuthenticationForm(forms.Form):
 
 
 class TransferForm(forms.Form):
-    destination_account_number = forms.CharField(max_length=10)
-    amount = forms.DecimalField(max_digits=14, decimal_places=2)
-    swift_code = forms.CharField(max_length=11, required=False)
-    reference = forms.CharField(max_length=255, required=False)
+    destination_account_number = forms.CharField(
+        max_length=10,
+        min_length=10,
+        label="Destination account number",
+        help_text="Enter the 10-digit recipient account number.",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "1234567890",
+                "inputmode": "numeric",
+                "autocomplete": "off",
+            }
+        ),
+    )
+    amount = forms.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        min_value=0.01,
+        label="Amount (EUR)",
+        help_text="Transfer fee is 2.5% of the amount or a minimum of EUR 5.",
+        widget=forms.NumberInput(attrs={"placeholder": "150.00", "step": "0.01", "min": "0.01"}),
+    )
+    swift_code = forms.CharField(
+        max_length=11,
+        required=False,
+        label="SWIFT / BIC code",
+        help_text="Optional for local testing. Use 8 or 11 characters if provided.",
+        widget=forms.TextInput(attrs={"placeholder": "BANKDEFF", "autocomplete": "off"}),
+    )
+    reference = forms.CharField(
+        max_length=255,
+        required=False,
+        label="Reference",
+        help_text="Optional note visible in the transaction history.",
+        widget=forms.TextInput(attrs={"placeholder": "Invoice 2026-001"}),
+    )
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user", None)
@@ -68,6 +99,8 @@ class TransferForm(forms.Form):
 
     def clean_destination_account_number(self):
         account_number = self.cleaned_data["destination_account_number"].strip()
+        if not account_number.isdigit():
+            raise forms.ValidationError("Account number must contain exactly 10 digits.")
         try:
             self.destination_account = BankAccount.objects.get(account_number=account_number)
         except BankAccount.DoesNotExist as exc:
@@ -77,6 +110,12 @@ class TransferForm(forms.Form):
             raise forms.ValidationError("You cannot send money to your own account.")
 
         return account_number
+
+    def clean_swift_code(self):
+        swift_code = self.cleaned_data["swift_code"].strip().upper()
+        if swift_code and len(swift_code) not in {8, 11}:
+            raise forms.ValidationError("SWIFT / BIC code must be 8 or 11 characters long.")
+        return swift_code
 
 
 class QRForm(forms.Form):
