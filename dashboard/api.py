@@ -34,7 +34,7 @@ class ManagerUserListAPIView(generics.ListAPIView):
     permission_classes = [IsManager]
 
     def get_queryset(self):
-        return User.objects.filter(role="user").select_related("bank_account").order_by("email")
+        return User.objects.filter(role="user").prefetch_related("accounts").order_by("email")
 
 
 @extend_schema(tags=["Manager"])

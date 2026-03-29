@@ -67,6 +67,8 @@ def create_transfer_request(*, sender_account, receiver_account, amount, initiat
 
     if sender_account.id == receiver_account.id:
         raise TransferError("You cannot transfer to the same account.")
+    if sender_account.currency != receiver_account.currency:
+        raise TransferError("Cross-currency transfers are not enabled yet. Use the currency converter first.")
     if amount <= 0:
         raise TransferError("Amount must be greater than zero.")
 

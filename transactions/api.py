@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
 from accounts.models import BankAccount
+from accounts.services import get_user_account
 from transactions.models import Transaction, Transfer
 from transactions.services import (
     IdempotencyConflictError,
@@ -18,14 +19,18 @@ from transactions.services import (
 
 class TransactionSerializer(serializers.ModelSerializer):
     account_number = serializers.CharField(source="account.account_number", read_only=True)
+    account_currency = serializers.CharField(source="account.currency", read_only=True)
     related_account_number = serializers.CharField(source="related_account.account_number", read_only=True)
+    related_account_currency = serializers.CharField(source="related_account.currency", read_only=True)
 
     class Meta:
         model = Transaction
         fields = [
             "id",
             "account_number",
+            "account_currency",
             "related_account_number",
+            "related_account_currency",
             "type",
             "status",
             "amount",
@@ -39,7 +44,9 @@ class TransactionSerializer(serializers.ModelSerializer):
 
 class TransferSerializer(serializers.ModelSerializer):
     sender_account_number = serializers.CharField(source="sender_account.account_number", read_only=True)
+    sender_currency = serializers.CharField(source="sender_account.currency", read_only=True)
     receiver_account_number = serializers.CharField(source="receiver_account.account_number", read_only=True)
+    receiver_currency = serializers.CharField(source="receiver_account.currency", read_only=True)
     initiated_by_email = serializers.EmailField(source="initiated_by.email", read_only=True)
     reviewed_by_email = serializers.EmailField(source="reviewed_by.email", read_only=True)
 
@@ -48,7 +55,9 @@ class TransferSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "sender_account_number",
+            "sender_currency",
             "receiver_account_number",
+            "receiver_currency",
             "initiated_by_email",
             "reviewed_by_email",
             "amount",
@@ -63,6 +72,7 @@ class TransferSerializer(serializers.ModelSerializer):
 
 
 class TransferCreateSerializer(serializers.Serializer):
+    source_account_number = serializers.CharField(max_length=10, required=False, allow_blank=True)
     destination_account_number = serializers.CharField(max_length=10)
     amount = serializers.DecimalField(max_digits=14, decimal_places=2)
     swift_code = serializers.CharField(max_length=11, required=False, allow_blank=True)
@@ -76,6 +86,14 @@ class TransferCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Destination account does not exist.")
         return cleaned
 
+    def validate_source_account_number(self, value):
+        cleaned = value.strip()
+        if not cleaned:
+            return ""
+        if not cleaned.isdigit() or len(cleaned) != 10:
+            raise serializers.ValidationError("Source account number must contain exactly 10 digits.")
+        return cleaned
+
     def validate_swift_code(self, value):
         try:
             return validate_swift_code(value)
@@ -83,13 +101,17 @@ class TransferCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError(str(exc)) from exc
 
     def validate(self, attrs):
-        sender_account = self.context["request"].user.bank_account
+        sender_account = get_user_account(
+            user=self.context["request"].user,
+            account_number=attrs.get("source_account_number") or None,
+        )
         if attrs["destination_account_number"] == sender_account.account_number:
             raise serializers.ValidationError({"destination_account_number": "You cannot transfer to the same account."})
+        attrs["sender_account"] = sender_account
         return attrs
 
     def create(self, validated_data):
-        sender_account = self.context["request"].user.bank_account
+        sender_account = validated_data["sender_account"]
         receiver_account = BankAccount.objects.get(account_number=validated_data["destination_account_number"])
         try:
             return create_transfer_request(
@@ -115,6 +137,7 @@ class TransferCreateSerializer(serializers.Serializer):
             OpenApiParameter(name="to", type=str, location=OpenApiParameter.QUERY, description="End date YYYY-MM-DD"),
             OpenApiParameter(name="type", type=str, location=OpenApiParameter.QUERY, description="Transaction type filter"),
             OpenApiParameter(name="status", type=str, location=OpenApiParameter.QUERY, description="Transaction status filter"),
+            OpenApiParameter(name="currency", type=str, location=OpenApiParameter.QUERY, description="Filter by account currency."),
         ],
     )
 )
@@ -125,11 +148,12 @@ class TransactionListAPIView(generics.ListAPIView):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Transaction.objects.none()
-        queryset = Transaction.objects.filter(account=self.request.user.bank_account)
+        queryset = Transaction.objects.filter(account__user=self.request.user)
         from_date = parse_date(self.request.query_params.get("from", ""))
         to_date = parse_date(self.request.query_params.get("to", ""))
         tx_type = self.request.query_params.get("type")
         status = self.request.query_params.get("status")
+        currency = self.request.query_params.get("currency")
         if from_date:
             queryset = queryset.filter(created_at__date__gte=from_date)
         if to_date:
@@ -138,6 +162,8 @@ class TransactionListAPIView(generics.ListAPIView):
             queryset = queryset.filter(type=tx_type)
         if status:
             queryset = queryset.filter(status=status)
+        if currency:
+            queryset = queryset.filter(account__currency=currency)
         return queryset.select_related("account", "related_account")
 
 
@@ -179,7 +205,7 @@ class TransferListCreateAPIView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         queryset = Transfer.objects.filter(
-            Q(sender_account=self.request.user.bank_account) | Q(receiver_account=self.request.user.bank_account)
+            Q(sender_account__user=self.request.user) | Q(receiver_account__user=self.request.user)
         ).select_related("sender_account", "receiver_account", "initiated_by", "reviewed_by")
         status = self.request.query_params.get("status")
         if status:

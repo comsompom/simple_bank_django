@@ -4,7 +4,7 @@ from rest_framework import generics, permissions, serializers
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from accounts.models import BankAccount
+from accounts.api import AccountSerializer
 from users.models import User, UserRole
 from users.services import create_user_with_account
 
@@ -14,18 +14,13 @@ class LoginAPIView(TokenObtainPairView):
     throttle_scope = "auth_login"
 
 
-class AccountSummarySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = BankAccount
-        fields = ["account_number", "balance", "currency", "status", "swift_code"]
-
-
 class UserSerializer(serializers.ModelSerializer):
-    account = AccountSummarySerializer(source="bank_account", read_only=True)
+    account = AccountSerializer(source="bank_account", read_only=True)
+    accounts = AccountSerializer(many=True, read_only=True)
 
     class Meta:
         model = User
-        fields = ["id", "email", "full_name", "role", "account"]
+        fields = ["id", "email", "full_name", "role", "default_currency", "account", "accounts"]
 
 
 class RegisterSerializer(serializers.Serializer):
