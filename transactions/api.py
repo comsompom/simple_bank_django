@@ -92,6 +92,8 @@ class TransferCreateSerializer(serializers.Serializer):
             return ""
         if not cleaned.isdigit() or len(cleaned) != 10:
             raise serializers.ValidationError("Source account number must contain exactly 10 digits.")
+        if not self.context["request"].user.accounts.filter(account_number=cleaned).exists():
+            raise serializers.ValidationError("Selected source account was not found.")
         return cleaned
 
     def validate_swift_code(self, value):

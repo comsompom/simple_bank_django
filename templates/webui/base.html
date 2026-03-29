@@ -25,6 +25,9 @@
         </nav>
     </header>
     <main class="page-shell">
+        {% if currency_metadata %}
+            {{ currency_metadata|json_script:"currency-metadata-json" }}
+        {% endif %}
         {% if messages %}
             <div class="messages">
                 {% for message in messages %}

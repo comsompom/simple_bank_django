@@ -1,10 +1,11 @@
 from django.test import TestCase
 from django.urls import reverse
 
+from accounts.currencies import AccountCurrency
 from transactions.models import TransferStatus
 from transactions.services import create_transfer_request
-from users.services import create_user_with_account
 from users.models import UserRole
+from users.services import create_user_with_account
 
 
 class TransferPageTests(TestCase):
@@ -20,6 +21,7 @@ class TransferPageTests(TestCase):
         response = self.client.post(
             reverse("transfer"),
             {
+                "source_account_number": self.user.bank_account.account_number,
                 "destination_account_number": "9999999999",
                 "amount": "50.00",
                 "swift_code": "",
@@ -34,6 +36,7 @@ class TransferPageTests(TestCase):
         response = self.client.post(
             reverse("transfer"),
             {
+                "source_account_number": self.user.bank_account.account_number,
                 "destination_account_number": self.user.bank_account.account_number,
                 "amount": "50.00",
                 "swift_code": "",
@@ -44,12 +47,39 @@ class TransferPageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "You cannot send money to your own account.")
 
-    def test_transfer_page_shows_account_guidance(self):
+    def test_transfer_page_shows_source_accounts_and_guidance(self):
         response = self.client.get(reverse("transfer"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.user.bank_account.account_number)
+        self.assertContains(response, "EUR")
+        self.assertContains(response, "USD")
         self.assertContains(response, "Destination account number must contain exactly 10 digits.")
+
+
+class DashboardMulticurrencyTests(TestCase):
+    def setUp(self):
+        self.user = create_user_with_account(
+            email="dashboard-user@example.com",
+            password="Passw0rd!234",
+            full_name="Dashboard User",
+        )
+        self.client.force_login(self.user)
+
+    def test_user_dashboard_includes_multicurrency_accounts_and_converter(self):
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Your currency accounts")
+        self.assertContains(response, "Convert between supported currencies")
+        self.assertContains(response, "/static/webui/flags/eur.svg")
+        self.assertContains(response, "/static/webui/flags/usd.svg")
+
+    def test_user_dashboard_can_switch_selected_currency(self):
+        response = self.client.get(reverse("dashboard") + "?currency=USD")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "USD")
 
 
 class DirectorDashboardTests(TestCase):
@@ -62,13 +92,14 @@ class DirectorDashboardTests(TestCase):
         )
         self.client.force_login(self.director)
 
-    def test_director_dashboard_includes_chart_triggers_and_panels(self):
+    def test_director_dashboard_includes_chart_triggers_panels_and_converter(self):
         response = self.client.get(reverse("dashboard"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Click to open detailed chart")
         self.assertContains(response, "Detailed charts")
-        self.assertContains(response, "User role distribution")
+        self.assertContains(response, "Accounts by currency")
+        self.assertContains(response, "Convert between supported currencies")
         self.assertContains(response, 'data-chart-trigger', html=False)
         self.assertContains(response, 'data-chart-panel', html=False)
 
@@ -119,3 +150,9 @@ class ManagerDashboardActionTests(TestCase):
         self.assertEqual(response.status_code, 302)
         transfer.refresh_from_db()
         self.assertEqual(transfer.status, TransferStatus.BLOCKED)
+
+    def test_manager_user_detail_shows_multiple_accounts(self):
+        response = self.client.get(reverse("webui-manager-user-detail", args=[self.user.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, AccountCurrency.EUR)
+        self.assertContains(response, AccountCurrency.USD)

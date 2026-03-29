@@ -2,6 +2,7 @@
 {% block content %}
 <section class="panel narrow">
     <h1>Create your account</h1>
+    <p>Registration automatically creates four currency accounts: EUR, USD, GBP, and PLN. The EUR account receives the welcome bonus.</p>
     <form method="post" class="form-grid">
         {% csrf_token %}
         {{ form.as_p }}

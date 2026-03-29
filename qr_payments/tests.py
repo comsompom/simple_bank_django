@@ -2,6 +2,7 @@ from django.core import signing
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from accounts.currencies import AccountCurrency
 from users.services import create_user_with_account
 
 
@@ -20,13 +21,14 @@ class QRApiTests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_response.data['access']}")
 
     def test_qr_generate_returns_payload_signed_payload_and_png(self):
+        usd_account = self.user.get_account_for_currency(AccountCurrency.USD)
         response = self.client.post(
             "/api/v1/qr/generate/",
-            {"amount": "25.50", "note": "Lunch"},
+            {"account_number": usd_account.account_number, "amount": "25.50", "note": "Lunch"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["payload"]["account_number"], self.user.bank_account.account_number)
+        self.assertEqual(response.data["payload"]["account_number"], usd_account.account_number)
         self.assertEqual(response.data["payload"]["note"], "Lunch")
         self.assertTrue(response.data["png_base64"])
         restored = signing.loads(response.data["signed_payload"])

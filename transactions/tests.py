@@ -4,6 +4,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from accounts.currencies import AccountCurrency
 from accounts.models import AccountStatus
 from transactions.models import TransactionStatus, TransferStatus
 from transactions.services import (
@@ -86,6 +87,19 @@ class TransferServiceUnitTests(TestCase):
                 idempotency_key="same-key",
             )
 
+    def test_cross_currency_transfer_request_is_rejected(self):
+        sender_usd = self.sender.get_account_for_currency(AccountCurrency.USD)
+        sender_usd.balance = Decimal("1000.00")
+        sender_usd.save(update_fields=["balance", "updated_at"])
+        receiver_eur = self.receiver.get_account_for_currency(AccountCurrency.EUR)
+        with self.assertRaises(TransferError):
+            create_transfer_request(
+                sender_account=sender_usd,
+                receiver_account=receiver_eur,
+                amount="100.00",
+                initiated_by=self.sender,
+            )
+
     def test_approve_pending_transfer_marks_related_transactions_completed(self):
         transfer = create_transfer_request(
             sender_account=self.sender.bank_account,
@@ -153,6 +167,7 @@ class TransferApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["status"], TransferStatus.PENDING)
+        self.assertEqual(response.data["sender_currency"], AccountCurrency.EUR)
 
         self.sender.bank_account.refresh_from_db()
         self.receiver.bank_account.refresh_from_db()
@@ -162,6 +177,38 @@ class TransferApiTests(APITestCase):
         self.assertEqual(self.receiver.bank_account.balance, Decimal("10000.00"))
         self.assertEqual(self.sender.bank_account.transactions.filter(status="pending").count(), 2)
         self.assertEqual(self.receiver.bank_account.transactions.filter(status="pending").count(), 1)
+
+    def test_transfer_request_can_use_non_default_currency_account(self):
+        sender_usd = self.sender.get_account_for_currency(AccountCurrency.USD)
+        receiver_usd = self.receiver.get_account_for_currency(AccountCurrency.USD)
+        sender_usd.balance = Decimal("500.00")
+        sender_usd.save(update_fields=["balance", "updated_at"])
+        response = self.client.post(
+            "/api/v1/transfers/",
+            {
+                "source_account_number": sender_usd.account_number,
+                "destination_account_number": receiver_usd.account_number,
+                "amount": "100.00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["sender_currency"], AccountCurrency.USD)
+
+    def test_transfer_request_rejects_cross_currency_accounts(self):
+        sender_usd = self.sender.get_account_for_currency(AccountCurrency.USD)
+        sender_usd.balance = Decimal("500.00")
+        sender_usd.save(update_fields=["balance", "updated_at"])
+        response = self.client.post(
+            "/api/v1/transfers/",
+            {
+                "source_account_number": sender_usd.account_number,
+                "destination_account_number": self.receiver.bank_account.account_number,
+                "amount": "100.00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_transfer_request_is_idempotent_with_header(self):
         headers = {"HTTP_IDEMPOTENCY_KEY": "transfer-key-1"}
@@ -211,9 +258,10 @@ class TransferApiTests(APITestCase):
         self.assertEqual(response.data["balance"], Decimal("10000.00"))
         self.assertEqual(response.data["reserved_balance"], Decimal("105.00"))
         self.assertEqual(response.data["available_balance"], Decimal("9895.00"))
+        self.assertEqual(response.data["currency"], AccountCurrency.EUR)
 
-    def test_transaction_list_supports_date_filters(self):
-        response = self.client.get("/api/v1/transactions/?from=2000-01-01&to=2999-01-01")
+    def test_transaction_list_can_filter_by_currency(self):
+        response = self.client.get("/api/v1/transactions/?currency=EUR")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(response.data["count"], 1)
 
@@ -271,8 +319,9 @@ class TransferApiTests(APITestCase):
         self.assertIn("swift_code", response.data)
 
     def test_blocked_sender_cannot_transfer(self):
-        self.sender.bank_account.status = AccountStatus.BLOCKED
-        self.sender.bank_account.save(update_fields=["status", "updated_at"])
+        sender_account = self.sender.bank_account
+        sender_account.status = AccountStatus.BLOCKED
+        sender_account.save(update_fields=["status", "updated_at"])
         response = self.client.post(
             "/api/v1/transfers/",
             {"destination_account_number": self.receiver.bank_account.account_number, "amount": "100.00"},

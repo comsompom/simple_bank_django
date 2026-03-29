@@ -1,0 +1,75 @@
+<section class="panel converter-panel">
+    <div class="converter-header">
+        <div>
+            <p class="eyebrow">Currency converter</p>
+            <h2>Convert between supported currencies</h2>
+        </div>
+        <p class="converter-copy">Supported accounts: EUR, USD, GBP, PLN.</p>
+    </div>
+    <form method="get" class="converter-form">
+        <div class="converter-field">
+            <label for="id_amount">Amount</label>
+            {{ converter_form.amount }}
+        </div>
+        <div class="converter-field">
+            <label for="id_from_currency">From</label>
+            <div class="currency-select-wrap">
+                <img class="currency-flag-preview" id="converter-from-flag" alt="from flag">
+                {{ converter_form.from_currency }}
+            </div>
+        </div>
+        <div class="converter-field">
+            <label for="id_to_currency">To</label>
+            <div class="currency-select-wrap">
+                <img class="currency-flag-preview" id="converter-to-flag" alt="to flag">
+                {{ converter_form.to_currency }}
+            </div>
+        </div>
+        <div class="converter-field converter-action">
+            <button class="button primary" type="submit">Convert</button>
+        </div>
+    </form>
+    {% if converter_result %}
+        <div class="converter-result">
+            <div class="converter-result-card">
+                <div class="currency-inline">
+                    <img class="currency-flag tiny" src="/static/{{ converter_result.from_metadata.flag_file }}" alt="{{ converter_result.from_currency }} flag">
+                    <span>{{ converter_result.amount }} {{ converter_result.from_currency }}</span>
+                </div>
+                <strong>=</strong>
+                <div class="currency-inline">
+                    <img class="currency-flag tiny" src="/static/{{ converter_result.to_metadata.flag_file }}" alt="{{ converter_result.to_currency }} flag">
+                    <span>{{ converter_result.converted_amount }} {{ converter_result.to_currency }}</span>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+    <div class="currency-legend">
+        {% for code, metadata in currency_metadata.items %}
+            <div class="currency-chip">
+                <img class="currency-flag tiny" src="/static/{{ metadata.flag_file }}" alt="{{ code }} flag">
+                <span>{{ code }} - {{ metadata.name }}</span>
+            </div>
+        {% endfor %}
+    </div>
+</section>
+<script>
+    (function () {
+        const metadata = JSON.parse(document.getElementById("currency-metadata-json").textContent);
+        const fromSelect = document.getElementById("id_from_currency");
+        const toSelect = document.getElementById("id_to_currency");
+        const fromFlag = document.getElementById("converter-from-flag");
+        const toFlag = document.getElementById("converter-to-flag");
+        const updateFlag = (select, img) => {
+            if (!select || !img) return;
+            const entry = metadata[select.value];
+            if (!entry) return;
+            img.src = "/static/" + entry.flag_file;
+            img.alt = select.value + " flag";
+        };
+        updateFlag(fromSelect, fromFlag);
+        updateFlag(toSelect, toFlag);
+        if (fromSelect) fromSelect.addEventListener("change", () => updateFlag(fromSelect, fromFlag));
+        if (toSelect) toSelect.addEventListener("change", () => updateFlag(toSelect, toFlag));
+    }());
+</script>

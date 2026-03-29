@@ -59,10 +59,7 @@ def get_user_accounts(user):
 def get_user_account(*, user, currency=None, account_number=None):
     queryset = user.accounts.all()
     if account_number:
-        try:
-            return queryset.get(account_number=account_number)
-        except BankAccount.DoesNotExist:
-            return user.bank_account
+        return queryset.get(account_number=account_number)
     if currency:
         try:
             return queryset.get(currency=currency)

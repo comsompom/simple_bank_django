@@ -3,6 +3,7 @@ from decimal import Decimal
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from accounts.currencies import AccountCurrency
 from users.models import User, UserRole
 from users.services import create_user_with_account
 from transactions.models import TransferStatus
@@ -58,6 +59,7 @@ class RoleApiTests(APITestCase):
         response = self.client.get("/api/v1/manager/users/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(response.data["count"], 2)
+        self.assertEqual(len(response.data["results"][0]["accounts"]), 4)
 
     def test_manager_can_create_account(self):
         self.auth("manager@example.com")
@@ -73,6 +75,7 @@ class RoleApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(User.objects.filter(email="created@example.com").exists())
+        self.assertEqual(len(response.data["accounts"]), 4)
 
     def test_manager_can_block_account(self):
         self.auth("manager@example.com")

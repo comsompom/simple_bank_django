@@ -4,7 +4,7 @@
     <div class="panel">
         <p class="eyebrow">Transfer request</p>
         <h1>Send money</h1>
-        <p>Submit a transfer request to another 10-digit account. A manager must approve it before the money is settled.</p>
+        <p>Submit a transfer request to another 10-digit account using one of your currency accounts. Cross-currency transfers are not enabled yet.</p>
         <form method="post" class="form-grid">
             {% csrf_token %}
             {{ form.as_p }}
@@ -12,17 +12,30 @@
         </form>
     </div>
     <div class="panel">
-        <p class="eyebrow">Your account</p>
-        <h2>{{ account.account_number }}</h2>
-        <p>Ledger balance: EUR {{ account.balance }}</p>
-        <p>Reserved balance: EUR {{ account.reserved_balance }}</p>
-        <p>Available balance: EUR {{ account.available_balance }}</p>
-        <p>SWIFT / BIC: {{ account.swift_code|default:"Not set" }}</p>
+        <p class="eyebrow">Selected account</p>
+        <div class="currency-inline large">
+            <img class="currency-flag" src="/static/{{ account.flag_file }}" alt="{{ account.currency }} flag">
+            <div>
+                <h2>{{ account.currency }} {{ account.balance }}</h2>
+                <p>{{ account.account_number }}</p>
+            </div>
+        </div>
+        <p>Reserved balance: {{ account.currency }} {{ account.reserved_balance }}</p>
+        <p>Available balance: {{ account.currency }} {{ account.available_balance }}</p>
         <hr class="panel-divider">
-        <p class="eyebrow">Before you submit</p>
+        <p class="eyebrow">Available source accounts</p>
+        <div class="account-chip-list">
+            {% for item in all_accounts %}
+                <span class="currency-chip">
+                    <img class="currency-flag tiny" src="/static/{{ item.flag_file }}" alt="{{ item.currency }} flag">
+                    <span>{{ item.currency }} {{ item.account_number }}</span>
+                </span>
+            {% endfor %}
+        </div>
+        <hr class="panel-divider">
         <ul class="hint-list">
             <li>Destination account number must contain exactly 10 digits.</li>
-            <li>Minimum fee is EUR {{ estimated_fee }}.</li>
+            <li>Minimum fee is 5 in the selected account currency.</li>
             <li>You cannot transfer to your own account.</li>
             <li>The transfer remains pending until a manager approves it.</li>
         </ul>

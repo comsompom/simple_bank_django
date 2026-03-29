@@ -2,7 +2,17 @@
 {% block content %}
 <section class="panel">
     <h1>Transaction report</h1>
+    <p class="eyebrow">Selected account: {{ account.currency }} {{ account.account_number }}</p>
+    <div class="account-chip-list">
+        {% for item in all_accounts %}
+            <a class="currency-chip chip-link{% if item.account_number == account.account_number %} active{% endif %}" href="{% url 'report' %}?currency={{ item.currency }}">
+                <img class="currency-flag tiny" src="/static/{{ item.flag_file }}" alt="{{ item.currency }} flag">
+                <span>{{ item.currency }}</span>
+            </a>
+        {% endfor %}
+    </div>
     <form method="get" class="filter-row">
+        <input type="hidden" name="currency" value="{{ account.currency }}">
         <label>From <input type="date" name="from" value="{{ from }}"></label>
         <label>To <input type="date" name="to" value="{{ to }}"></label>
         <button class="button secondary" type="submit">Filter</button>
@@ -13,7 +23,7 @@
             {% for tx in transactions %}
                 <tr>
                     <td>{{ tx.type }}</td>
-                    <td>EUR {{ tx.amount }}</td>
+                    <td>{{ tx.account.currency }} {{ tx.amount }}</td>
                     <td>{{ tx.reference|default:"-" }}</td>
                     <td>{{ tx.related_account.account_number|default:"-" }}</td>
                     <td>{{ tx.created_at }}</td>

@@ -3,6 +3,7 @@
 <section class="grid two-col">
     <div class="panel">
         <h1>Receive money QR</h1>
+        <p class="eyebrow">Selected account: {{ account.currency }} {{ account.account_number }}</p>
         <form method="post" class="form-grid">
             {% csrf_token %}
             {{ form.as_p }}
@@ -11,6 +12,10 @@
     </div>
     <div class="panel">
         {% if qr_result %}
+            <div class="currency-inline">
+                <img class="currency-flag" src="/static/{{ qr_result.account.flag_file }}" alt="{{ qr_result.account.currency }} flag">
+                <strong>{{ qr_result.account.currency }} {{ qr_result.account.account_number }}</strong>
+            </div>
             <img class="qr-image" src="data:image/png;base64,{{ qr_result.png_base64 }}" alt="QR code">
             <pre>{{ qr_result.payload }}</pre>
         {% else %}

@@ -2,29 +2,51 @@
 {% block content %}
 {% if role == 'user' %}
 <section class="grid cards">
-    <div class="panel">
-        <p class="eyebrow">Ledger balance</p>
-        <h2>EUR {{ account.balance }}</h2>
+    <div class="panel account-highlight">
+        <div class="currency-inline large">
+            <img class="currency-flag" src="/static/{{ account.flag_file }}" alt="{{ account.currency }} flag">
+            <div>
+                <p class="eyebrow">Selected account</p>
+                <h2>{{ account.currency }} {{ account.balance }}</h2>
+            </div>
+        </div>
         <p>Account {{ account.account_number }} - {{ account.status|title }}</p>
     </div>
     <div class="panel">
         <p class="eyebrow">Reserved</p>
-        <h2>EUR {{ account.reserved_balance }}</h2>
+        <h2>{{ account.currency }} {{ account.reserved_balance }}</h2>
         <p>Funds held for pending transfer approvals.</p>
     </div>
     <div class="panel">
         <p class="eyebrow">Available</p>
-        <h2>EUR {{ account.available_balance }}</h2>
+        <h2>{{ account.currency }} {{ account.available_balance }}</h2>
         <p>Spendable balance after reservations.</p>
     </div>
 </section>
+<section class="panel">
+    <h2>Your currency accounts</h2>
+    <div class="account-grid">
+        {% for item in all_accounts %}
+            <a class="account-card{% if item.account_number == account.account_number %} active{% endif %}" href="{% url 'dashboard' %}?currency={{ item.currency }}">
+                <div class="currency-inline">
+                    <img class="currency-flag" src="/static/{{ item.flag_file }}" alt="{{ item.currency }} flag">
+                    <strong>{{ item.currency }}</strong>
+                </div>
+                <div>{{ item.account_number }}</div>
+                <div>{{ item.currency_name }}</div>
+                <div>Balance {{ item.currency }} {{ item.balance }}</div>
+            </a>
+        {% endfor %}
+    </div>
+</section>
+{% include "webui/partials/currency_converter.html" %}
 <section class="grid two-col">
     <div class="panel">
         <p class="eyebrow">Quick actions</p>
         <div class="actions vertical">
-            <a class="button primary" href="{% url 'transfer' %}">Request transfer</a>
-            <a class="button secondary" href="{% url 'report' %}">Open report</a>
-            <a class="button secondary" href="{% url 'qr' %}">Generate QR</a>
+            <a class="button primary" href="{% url 'transfer' %}?currency={{ account.currency }}">Request transfer</a>
+            <a class="button secondary" href="{% url 'report' %}?currency={{ account.currency }}">Open report</a>
+            <a class="button secondary" href="{% url 'qr' %}?currency={{ account.currency }}">Generate QR</a>
         </div>
     </div>
     <div class="panel">
@@ -35,8 +57,8 @@
                 {% for transfer in pending_transfers %}
                     <tr>
                         <td>{{ transfer.receiver_account.account_number }}</td>
-                        <td>EUR {{ transfer.amount }}</td>
-                        <td>EUR {{ transfer.fee_amount }}</td>
+                        <td>{{ transfer.sender_account.currency }} {{ transfer.amount }}</td>
+                        <td>{{ transfer.sender_account.currency }} {{ transfer.fee_amount }}</td>
                         <td>{{ transfer.status }}</td>
                     </tr>
                 {% empty %}
@@ -55,7 +77,7 @@
                 <tr>
                     <td>{{ tx.type }}</td>
                     <td>{{ tx.status }}</td>
-                    <td>EUR {{ tx.amount }}</td>
+                    <td>{{ tx.account.currency }} {{ tx.amount }}</td>
                     <td>{{ tx.related_account.account_number|default:"-" }}</td>
                     <td>{{ tx.created_at }}</td>
                 </tr>
@@ -66,6 +88,7 @@
     </table>
 </section>
 {% elif role == 'manager' %}
+{% include "webui/partials/currency_converter.html" %}
 <section class="panel">
     <h1>Manager workspace</h1>
     <p>Review customer accounts, pending transfers, and transaction history.</p>
@@ -73,15 +96,16 @@
 <section class="panel">
     <h2>Pending transfer approvals</h2>
     <table>
-        <thead><tr><th>ID</th><th>From</th><th>To</th><th>Amount</th><th>Fee</th><th>Reference</th><th>Actions</th></tr></thead>
+        <thead><tr><th>ID</th><th>From</th><th>To</th><th>Currency</th><th>Amount</th><th>Fee</th><th>Reference</th><th>Actions</th></tr></thead>
         <tbody>
             {% for transfer in pending_transfers %}
                 <tr>
                     <td>#{{ transfer.id }}</td>
                     <td>{{ transfer.sender_account.account_number }}</td>
                     <td>{{ transfer.receiver_account.account_number }}</td>
-                    <td>EUR {{ transfer.amount }}</td>
-                    <td>EUR {{ transfer.fee_amount }}</td>
+                    <td>{{ transfer.sender_account.currency }}</td>
+                    <td>{{ transfer.sender_account.currency }} {{ transfer.amount }}</td>
+                    <td>{{ transfer.sender_account.currency }} {{ transfer.fee_amount }}</td>
                     <td>{{ transfer.reference|default:"-" }}</td>
                     <td>
                         <form method="post" action="{% url 'webui-manager-approve-transfer' transfer.id %}" class="inline-form">{% csrf_token %}<button class="button primary small" type="submit">Approve</button></form>
@@ -89,7 +113,7 @@
                     </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="7">No pending transfers.</td></tr>
+                <tr><td colspan="8">No pending transfers.</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -97,16 +121,22 @@
 <section class="panel">
     <h2>Customers</h2>
     <table>
-        <thead><tr><th>Name</th><th>Email</th><th>Account</th><th>Balance</th><th>Reserved</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Accounts</th><th></th></tr></thead>
         <tbody>
             {% for bank_user in users %}
                 <tr>
                     <td>{{ bank_user.full_name }}</td>
                     <td>{{ bank_user.email }}</td>
-                    <td>{{ bank_user.bank_account.account_number }}</td>
-                    <td>EUR {{ bank_user.bank_account.balance }}</td>
-                    <td>EUR {{ bank_user.bank_account.reserved_balance }}</td>
-                    <td>{{ bank_user.bank_account.status }}</td>
+                    <td>
+                        <div class="account-chip-list">
+                            {% for account in bank_user.accounts.all %}
+                                <span class="currency-chip">
+                                    <img class="currency-flag tiny" src="/static/{{ account.flag_file }}" alt="{{ account.currency }} flag">
+                                    <span>{{ account.currency }} {{ account.balance }}</span>
+                                </span>
+                            {% endfor %}
+                        </div>
+                    </td>
                     <td><a class="button secondary small" href="{% url 'webui-manager-user-detail' bank_user.id %}">Open</a></td>
                 </tr>
             {% endfor %}
@@ -114,6 +144,7 @@
     </table>
 </section>
 {% elif role == 'director' %}
+{% include "webui/partials/currency_converter.html" %}
 <section class="grid cards">
     {% for card in director_cards %}
         <button
@@ -137,11 +168,7 @@
         <p class="director-chart-help">Select any KPI card above to switch the chart shown below.</p>
     </div>
     {% for chart in director_charts %}
-        <div
-            class="director-chart-panel{% if chart.id == default_director_chart_id %} active{% endif %}"
-            data-chart-panel
-            id="{{ chart.id }}"
-        >
+        <div class="director-chart-panel{% if chart.id == default_director_chart_id %} active{% endif %}" data-chart-panel id="{{ chart.id }}">
             <h3>{{ chart.title }}</h3>
             <p class="director-chart-subtitle">{{ chart.subtitle }}</p>
             <div class="director-chart-bars">
@@ -164,23 +191,15 @@
     (function () {
         const triggers = document.querySelectorAll("[data-chart-trigger]");
         const panels = document.querySelectorAll("[data-chart-panel]");
-        if (!triggers.length || !panels.length) {
-            return;
-        }
-
+        if (!triggers.length || !panels.length) return;
         triggers.forEach((trigger) => {
             trigger.addEventListener("click", () => {
                 const targetId = trigger.getAttribute("data-chart-target");
-
                 triggers.forEach((item) => item.classList.remove("active"));
                 panels.forEach((panel) => panel.classList.remove("active"));
-
                 trigger.classList.add("active");
                 const targetPanel = document.getElementById(targetId);
-                if (targetPanel) {
-                    targetPanel.classList.add("active");
-                    targetPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                }
+                if (targetPanel) targetPanel.classList.add("active");
             });
         });
     }());

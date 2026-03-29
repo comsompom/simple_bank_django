@@ -2,26 +2,39 @@
 {% block content %}
 <section class="panel">
     <h1>{{ bank_user.full_name }}</h1>
-    <p>{{ bank_user.email }} - {{ bank_user.bank_account.account_number }} - EUR {{ bank_user.bank_account.balance }}</p>
-    <form method="post" action="{% url 'webui-manager-block-account' bank_user.bank_account.id %}">
-        {% csrf_token %}
-        <button class="button danger" type="submit">Block account</button>
-    </form>
+    <p>{{ bank_user.email }}</p>
+    <div class="account-grid compact">
+        {% for account in bank_user.accounts.all %}
+            <div class="account-card active">
+                <div class="currency-inline">
+                    <img class="currency-flag" src="/static/{{ account.flag_file }}" alt="{{ account.currency }} flag">
+                    <strong>{{ account.currency }}</strong>
+                </div>
+                <div>{{ account.account_number }}</div>
+                <div>Balance {{ account.currency }} {{ account.balance }}</div>
+                <form method="post" action="{% url 'webui-manager-block-account' account.id %}">
+                    {% csrf_token %}
+                    <button class="button danger small" type="submit">Block account</button>
+                </form>
+            </div>
+        {% endfor %}
+    </div>
 </section>
 <section class="panel">
     <h2>Transactions</h2>
     <table>
-        <thead><tr><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+        <thead><tr><th>Account</th><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
         <tbody>
             {% for tx in transactions %}
                 <tr>
+                    <td>{{ tx.account.currency }} {{ tx.account.account_number }}</td>
                     <td>{{ tx.type }}</td>
-                    <td>EUR {{ tx.amount }}</td>
+                    <td>{{ tx.account.currency }} {{ tx.amount }}</td>
                     <td>{{ tx.status }}</td>
                     <td>{{ tx.created_at }}</td>
                 </tr>
             {% empty %}
-                <tr><td colspan="4">No transactions found.</td></tr>
+                <tr><td colspan="5">No transactions found.</td></tr>
             {% endfor %}
         </tbody>
     </table>

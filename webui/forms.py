@@ -1,7 +1,9 @@
 from django import forms
 from django.contrib.auth import authenticate
 
+from accounts.currencies import AccountCurrency, get_currency_choices
 from accounts.models import BankAccount
+from accounts.services import get_user_accounts
 from transactions.services import validate_swift_code
 from users.models import User
 from users.services import create_user_with_account
@@ -57,6 +59,7 @@ class EmailAuthenticationForm(forms.Form):
 
 
 class TransferForm(forms.Form):
+    source_account_number = forms.ChoiceField(label="From account")
     destination_account_number = forms.CharField(
         max_length=10,
         min_length=10,
@@ -74,8 +77,8 @@ class TransferForm(forms.Form):
         max_digits=14,
         decimal_places=2,
         min_value=0.01,
-        label="Amount (EUR)",
-        help_text="Transfer fee is 2.5% of the amount or a minimum of EUR 5.",
+        label="Amount",
+        help_text="Transfer fee is 2.5% of the amount or a minimum of 5 in the selected account currency.",
         widget=forms.NumberInput(attrs={"placeholder": "150.00", "step": "0.01", "min": "0.01"}),
     )
     swift_code = forms.CharField(
@@ -95,8 +98,31 @@ class TransferForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user", None)
+        self.selected_currency = kwargs.pop("selected_currency", None)
         self.destination_account = None
+        self.source_account = None
         super().__init__(*args, **kwargs)
+        if self.user and self.user.is_authenticated:
+            account_choices = []
+            initial_account_number = None
+            for account in get_user_accounts(self.user):
+                label = f"{account.currency} - {account.account_number} - Available {account.available_balance}"
+                account_choices.append((account.account_number, label))
+                if account.currency == self.selected_currency:
+                    initial_account_number = account.account_number
+            self.fields["source_account_number"].choices = account_choices
+            if initial_account_number:
+                self.initial.setdefault("source_account_number", initial_account_number)
+
+    def clean_source_account_number(self):
+        account_number = self.cleaned_data["source_account_number"]
+        if not self.user or not self.user.is_authenticated:
+            raise forms.ValidationError("Authentication is required.")
+        try:
+            self.source_account = self.user.accounts.get(account_number=account_number)
+        except BankAccount.DoesNotExist as exc:
+            raise forms.ValidationError("Selected source account was not found.") from exc
+        return account_number
 
     def clean_destination_account_number(self):
         account_number = self.cleaned_data["destination_account_number"].strip()
@@ -106,11 +132,18 @@ class TransferForm(forms.Form):
             self.destination_account = BankAccount.objects.get(account_number=account_number)
         except BankAccount.DoesNotExist as exc:
             raise forms.ValidationError("Destination account was not found.") from exc
-
-        if self.user and self.user.is_authenticated and self.user.bank_account.account_number == account_number:
-            raise forms.ValidationError("You cannot send money to your own account.")
-
         return account_number
+
+    def clean(self):
+        cleaned_data = super().clean()
+        source_account = getattr(self, "source_account", None)
+        destination_account = getattr(self, "destination_account", None)
+        if source_account and destination_account:
+            if source_account.account_number == destination_account.account_number:
+                self.add_error("destination_account_number", "You cannot send money to your own account.")
+            if source_account.currency != destination_account.currency:
+                self.add_error("destination_account_number", "Destination account must use the same currency as the selected source account.")
+        return cleaned_data
 
     def clean_swift_code(self):
         try:
@@ -120,5 +153,33 @@ class TransferForm(forms.Form):
 
 
 class QRForm(forms.Form):
+    account_number = forms.ChoiceField(label="Account")
     amount = forms.DecimalField(max_digits=14, decimal_places=2)
     note = forms.CharField(max_length=255, required=False)
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop("user", None)
+        selected_currency = kwargs.pop("selected_currency", None)
+        super().__init__(*args, **kwargs)
+        if user and user.is_authenticated:
+            choices = []
+            initial_account_number = None
+            for account in get_user_accounts(user):
+                label = f"{account.currency} - {account.account_number}"
+                choices.append((account.account_number, label))
+                if account.currency == selected_currency:
+                    initial_account_number = account.account_number
+            self.fields["account_number"].choices = choices
+            if initial_account_number:
+                self.initial.setdefault("account_number", initial_account_number)
+
+
+class CurrencyConverterForm(forms.Form):
+    amount = forms.DecimalField(max_digits=14, decimal_places=2, min_value=0.01, initial="100.00")
+    from_currency = forms.ChoiceField(choices=get_currency_choices())
+    to_currency = forms.ChoiceField(choices=get_currency_choices())
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["from_currency"].initial = AccountCurrency.EUR
+        self.fields["to_currency"].initial = AccountCurrency.USD
